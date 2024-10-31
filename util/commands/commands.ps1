@@ -1,8 +1,52 @@
 $printables = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 $banned = "abefnrtv"
 
-function ObfuscateCommandTypes($command) {
-    return RandomUpercaseCharacters $command
+function ObfuscateCommandTypes {
+    param(
+        [string]$CommandText,
+        [hashtable]$CommandInfo
+    )
+    if ($CommandInfo.IsBuiltIn) {
+        switch ($CommandInfo.Type) {
+            "Cmdlet" {
+                $verb, $noun = $CommandText -split '-'
+                if ($noun) {
+                    if ($verbose) {
+                        Write-Host $CommandText NOUN
+                    }
+                    return ObfuscateMethodsGood $CommandText
+                }
+                if ($verbose) {
+                    Write-Host $CommandText VERB
+                }
+                return ObfuscateMethodsGood $CommandText
+            }
+            "Function" {
+                if ($verbose) {
+                    Write-Host $CommandText FUNCTION
+                }
+                return RandomUpercaseCharacters $CommandText
+            }
+            "Alias" {
+                return RandomUpercaseCharacters $CommandText
+            }
+            default {
+                return RandomUpercaseCharacters $CommandText
+            }
+        }
+    }
+    else {
+        if ($verbose) {
+            Write-Host $CommandText CUSTOM
+        }
+        return RandomUpercaseCharacters $CommandText
+    }
+}
+
+function Get-RandomString {
+    $length = Get-Random -Minimum 8 -Maximum 16
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    return -join ((1..$length) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
 }
 
 function RandomUpercaseCharacters($string) {
@@ -14,7 +58,7 @@ function RandomUpercaseCharacters($string) {
                 $_.ToUpper()
             }
             else {
-                $_
+                $_.ToLower()
             }
         }
         else {

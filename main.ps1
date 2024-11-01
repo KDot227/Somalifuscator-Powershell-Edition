@@ -1,16 +1,28 @@
 #python import type shi
-. "$PSScriptRoot\util\strings\strings.ps1"
-. "$PSScriptRoot\util\variables\variables.ps1"
-. "$PSScriptRoot\util\commands\commands.ps1"
-. "$PSScriptRoot\util\commands\function_names.ps1"
-. "$PSScriptRoot\util\final\encodeOutput.ps1"
-. "$PSScriptRoot\util\numbers\obfuscate_numbers.ps1"
+$scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 
-$times = 0
+. "$scriptPath\util\strings\strings.ps1"
+. "$scriptPath\util\variables\variables.ps1"
+. "$scriptPath\util\commands\commands.ps1"
+. "$scriptPath\util\commands\function_names.ps1"
+. "$scriptPath\util\final\encodeOutput.ps1"
+. "$scriptPath\util\numbers\obfuscate_numbers.ps1"
+
+$times = 2
 $verbose = $false
+$verbose_out_file = $true
+
+if ($verbose_out_file) {
+    #redirect standard output when we need the verbose in a file
+    $VerbosePreference = "Continue"
+    $VerboseOutput = "obfuscate.log"
+    Start-Transcript -Path $VerboseOutput
+}
 
 # this is EXTREMELY NEEDED because the Get-Command function is so utterly slow.
 $CommandTypeCache = @{}
+
+$functionNamesIgnore = @("CheckValidationResult")
 
 function ObfuscateCode($code) {
     $code_copy = $code
@@ -18,7 +30,6 @@ function ObfuscateCode($code) {
     $variableReplacementMap = @{}
     $parameterReplacementMap = @{}
     $stringReplacementMap = @{}
-    $barewordReplacementMap = @{}
     $numberReplacementMap = @{}
 
     $comments = [System.Management.Automation.PSParser]::Tokenize($code_copy, [ref]$null) | Where-Object { $_.Type -eq "Comment" }
@@ -38,9 +49,6 @@ function ObfuscateCode($code) {
     
     # get all variable expressions
     $variableExpressions = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)
-    
-    # get all parameter ASTs
-    $parameterAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ParameterAst] }, $true)
 
     $stringAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and ($args[0].StringConstantType -eq "DoubleQuoted" -or $args[0].StringConstantType -eq "SingleQuoted") }, $true)
 
@@ -86,6 +94,8 @@ function ObfuscateCode($code) {
     foreach ($func in $functionDefinitions) {
         $functionKeywordLength = "function ".Length
         $actualStartOffset = $func.Extent.StartOffset + $functionKeywordLength
+
+        if ($func.Name -in $functionNamesIgnore) { continue }
         
         $allReplacements += @{
             StartOffset = $actualStartOffset
@@ -99,6 +109,9 @@ function ObfuscateCode($code) {
     # add function calls and parameters
     foreach ($call in $allCommandCalls) {
         $commandName = $call.CommandElements[0].Extent.Text
+
+        if ($commandName -in $functionNamesIgnore) { continue }
+
         if ($functionReplacementMap.ContainsKey($commandName)) {
             $allReplacements += @{
                 StartOffset = $call.CommandElements[0].Extent.StartOffset
@@ -343,8 +356,22 @@ function Main($payload) {
     return $obfuscatedCode
 }
 
-$file_location = Read-Host "Enter the file location -> "
-$stuff = Get-Content $file_location -Raw
+function Get-FileLocation {
+    while ($true) {
+        $file_location = Read-Host "Enter the file location -> "
+        if ((Test-Path $file_location) -and $file_location -like "*.ps1") {
+            return $file_location
+        } else {
+            Write-Host "File not found or not a .ps1 file: $file_location"
+        }
+    }
+}
+
+$location_good = Get-FileLocation
+
+$stuff = Get-Content $location_good -Raw
 
 $obfuscatedCode = Main $stuff
-$obfuscatedCode | Out-File "example\out.ps1" -Force
+
+$out_file = $location_good -replace ".ps1", "_obfuscated.ps1"
+$obfuscatedCode | Out-File $out_file -Force

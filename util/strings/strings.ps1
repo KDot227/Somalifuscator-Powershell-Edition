@@ -9,7 +9,15 @@ function ObfuscateString($string) {
         return "''"
     }
     $out_content = ""
-    $string_pieces = SplitStrings $string
+    try {
+        $string_pieces = SplitStrings $string
+    }
+    catch {
+        Write-Host "Error splitting string: $string"
+        Read-Host "Press enter to exit..."
+        exit 1
+    }
+    
     foreach ($small_string in $string_pieces) {
         $obfuscationFunctions = @(
             #"ObfuscateStringReverse",

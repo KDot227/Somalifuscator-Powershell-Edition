@@ -1,16 +1,16 @@
-$bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args')
+$bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args', '$ErrorActionPreference', '$ProgressPreference', '$PROFILE')
 
-function ObfuscateVariables($variable) {
-    $lower_var = $variable.ToLower()
+function ObfuscateVariables($variable_good) {
+    $lower_var = $variable_good.ToLower()
     switch ($lower_var) {
         '$true' { return ObfuscateTrue }
         '$false' { return ObfuscateFalse }
         '$null' { return ObfuscateNull }
     }
-    
+
     foreach ($bad_var in $bad_vars2) {
-        if ($variable.StartsWith($bad_var)) {
-            return $variable
+        if ($lower_var -contains $bad_var) {
+            return $variable_good
         }
     }
     return MakeRandomVariableName 10

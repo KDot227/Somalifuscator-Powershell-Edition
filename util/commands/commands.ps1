@@ -51,22 +51,24 @@ function Get-RandomString {
 
 function RandomUpercaseCharacters($string) {
     $string = $string -split ""
-    $string = $string | ForEach-Object {
-        if ($printables.Contains($_) -and ($_ -ne "")) {
+    for ($i = 0; $i -lt $string.Length; $i++) {
+        if ($i -gt 0 -and $string[$i - 1] -eq '`' -and $printables.Contains($string[$i])) {
+            continue
+        }
+
+        if ($printables.Contains($string[$i]) -and ($string[$i] -ne "")) {
             $random = Get-Random -Minimum 0 -Maximum 2
             if ($random -eq 0) {
-                $_.ToUpper()
+                $string[$i] = $string[$i].ToUpper()
             }
             else {
-                $_.ToLower()
+                $string[$i] = $string[$i].ToLower()
             }
-        }
-        else {
-            $_
         }
     }
     return $string -join ''
 }
+
 
 function ObfuscateMethodCalls($string, $quotes = $true) {
     $out_str = ""

@@ -8,7 +8,7 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 . "$scriptPath\util\final\encodeOutput.ps1"
 . "$scriptPath\util\numbers\obfuscate_numbers.ps1"
 
-$times = 2
+$times = 0
 $verbose = $false
 $verbose_out_file = $false
 

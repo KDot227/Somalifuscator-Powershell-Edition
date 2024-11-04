@@ -1,38 +1,54 @@
 #TODO add env var obf
+$split_string_verbose = $false
 
 function ObfuscateString($string) {
-    #make a list of all the functions that can obfuscate $string then pick a random one and pass in string and return the output
-    #remove first and last character
-    $string = $string.Substring(1, $string.Length - 2)
+    $splitting = $true
+    if ($string.Length -lt 4) {
+        $splitting = $false
+    }
+    if ($string.StartsWith("'") -and $string.EndsWith("'")) {
+        $string = $string.Substring(1, $string.Length - 2)
+    }
+    if ($string.StartsWith('"') -and $string.EndsWith('"')) {
+        $string = $string.Substring(1, $string.Length - 2)
+    }
     $string = $string -replace "`'", "`'`'"
     if ($string -eq "") {
         return "''"
     }
     $out_content = ""
-    try {
-        $string_pieces = SplitStrings $string
+
+    if ($splitting -eq $false) {
+        $string_pieces = @($string)
+    } else {
+        try {
+            [string[]]$string_pieces = SplitStrings $string
+        }
+        catch {
+            Write-Host "Error splitting string: $string"
+            Read-Host "Press enter to exit..."
+            exit 1
+        }
     }
-    catch {
-        Write-Host "Error splitting string: $string"
-        Read-Host "Press enter to exit..."
-        exit 1
-    }
-    
-    foreach ($small_string in $string_pieces) {
+
+    for ($i = 0; $i -lt $string_pieces.Count; $i++) {
+        $small_string = $string_pieces[$i]
         $obfuscationFunctions = @(
             #"ObfuscateStringReverse",
-            "ObfuscateBase64String"
-            #"ObfuscateReplaceString"
+            "ObfuscateBase64String",
+            #"ObfuscateReplaceString",
+            "ObfuscateHexString",
+            "ObfuscateByteArrayString",
+            "ObfuscateMixedString"
         )
         $random = Get-Random -Minimum 0 -Maximum $obfuscationFunctions.Length
         $obfuscationFunction = $obfuscationFunctions[$random]
         $out_content2 = & $obfuscationFunction $small_string
-        #check to see if this is the last iteration
-        if ($small_string -eq $string_pieces[-1]) {
-            $out_content += "$out_content2"
-        }
-        else {
+        
+        if ($i -lt ($string_pieces.Count - 1)) {
             $out_content += "$out_content2 + "
+        } else {
+            $out_content += $out_content2
         }
     }
 
@@ -56,19 +72,102 @@ function ObfuscateBase64String($string) {
     return $command
 }
 
-function SplitStrings($string) {
+function ObfuscateByteArrayString($string) {
     #WORKING
-    #split the string into an array of multiple substrings of the $string variable
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($string)
+    $good_bytes = "(" + ($bytes -join ', ') + ")"
+    $command = "[System.Text.Encoding]::UTF8.GetString($good_bytes)"
+    return $command
+}
+
+function ObfuscateHexString($string) {
+    if ([string]::IsNullOrEmpty($string)) {
+        return "''"
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($string)
+    $hexString = $bytes | ForEach-Object { "0x{0:x2}" -f $_ }
+    $hexString = "($($hexString -join ', '))"
+    $command = "[System.Text.Encoding]::UTF8.GetString($hexString)"
+    return $command
+}
+
+function ObfuscateMixedString($string) {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($string)
+    $hexArray = $bytes | ForEach-Object { "0x{0:x2}" -f $_ }
+
+    if ($bytes.Length -eq 1) {
+        $byteArrayString = $bytes[0]
+    } else {
+        $mixedArray = for ($i = 0; $i -lt $bytes.Length; $i++) {
+            if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
+                $bytes[$i]
+            } else {
+                $hexArray[$i]
+            }
+        }
+        $byteArrayString = "(" + ($mixedArray -join ', ') + ")"
+    }
+
+    $command = "[System.Text.Encoding]::UTF8.GetString($byteArrayString)"
+    return $command
+}
+
+function SplitStrings {
+    param (
+        [string]$string
+    )
+
     $string_length = $string.Length
     if ($string_length -lt 2) {
-        return $string
+        return @($string)
     }
-    $split_ammount = Get-Random -Minimum 2 -Maximum $string_length
-    $split_string = $string -split "(?<=\G.{$split_ammount})"
-    return $split_string
+
+    # array to store chunks
+    $result = @()
+    $i = 0
+
+    while ($i -lt $string_length) {
+        if ($string_length -lt 10) {
+            $chunk_length = Get-Random -Minimum 2 -Maximum 5
+        } elseif ($string_length -lt 50) {
+            $chunk_length = Get-Random -Minimum 15 -Maximum 25
+        } elseif ($string_length -lt 100) {
+            $chunk_length = Get-Random -Minimum 24 -Maximum 50
+        } elseif ($string_length -lt 200) {
+            $chunk_length = Get-Random -Minimum 50 -Maximum 100
+        } elseif ($string_length -lt 500) {
+            $chunk_length = Get-Random -Minimum 75 -Maximum 200
+        } elseif ($string_length -lt 1000) {
+            $chunk_length = Get-Random -Minimum 100 -Maximum 300
+        } else {
+            $chunk_length = Get-Random -Minimum 200 -Maximum 500
+        }
+
+        # make sure we got the remaining string length
+        $length = [Math]::Min($chunk_length, $string_length - $i)
+
+        # add it to the chunk array
+        $result += $string.Substring($i, $length)
+        
+        # move the index forward of how far we've gone.
+        $i += $length
+
+        if ($split_string_verbose) {
+            Write-Host "Chunk: $($result[-1])"
+        }
+    }
+
+    #pretty print the chunks
+    if ($split_string_verbose) {
+        Write-Host "Chunks: $($result -join ', ')"
+    }
+
+    return $result
 }
 
 function ObfuscateReplaceString($string) {
+    #BROKEN
     $split_str = SplitStrings $string
     $replaces_amount = $split_str.Length
 
@@ -93,4 +192,26 @@ function ObfuscateReplaceString($string) {
     return $out_command
 }
 
-#ObfuscateReplaceString "Write-Host testcuz"
+function make_random_string($length) {
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    return -join ((1..$length) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+}
+
+## Test the obfuscation
+#for ($i = 0; $i -lt 1000; $i++) {
+#    $length = Get-Random -Minimum 1 -Maximum 10
+#    $string = make_random_string $length
+#    $obfuscated_string = ObfuscateString $string
+#    $deobfuscated_string = Invoke-Expression $obfuscated_string
+#    
+#    if ($string -ne $deobfuscated_string) {
+#        Write-Host "-------------------------------------"
+#        Write-Host "$string"
+#        Write-Host "$deobfuscated_string"
+#        Write-Host "Failed to deobfuscate string: $string"
+#        Write-Host "Obfuscated: $obfuscated_string"
+#        Write-Host "Deobfuscated: $deobfuscated_string"
+#        Write-Host "Press Enter to continue..."
+#        Read-Host
+#    }
+#}

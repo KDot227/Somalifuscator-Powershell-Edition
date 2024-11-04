@@ -90,4 +90,4 @@ function Decrypt-String(`$key, `$encryptedStringWithIV) {`$bytes = [System.Conve
     return $placeholder_code
 }
 
-$placeholder_code -replace "YOUR_KEY_HERE"
+$placeholder_code -replace "YOUR_KEY_HERE" | Out-Null

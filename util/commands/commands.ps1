@@ -1,5 +1,5 @@
 $printables = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-$banned = "abefnrtv"
+$banned = "abefnrtvABEFNRTV"
 
 function ObfuscateCommandTypes {
     param(

@@ -10,12 +10,13 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 
 $times = 2
 $verbose = $false
-$verbose_out_file = $true
+$verbose_out_file = $false
 
 if ($verbose_out_file) {
     #redirect standard output when we need the verbose in a file
     $VerbosePreference = "Continue"
-    $VerboseOutput = "obfuscate.log"
+    $date_and_time = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $VerboseOutput = "obfuscate$date_and_time.log"
     Start-Transcript -Path $VerboseOutput
 }
 
@@ -43,20 +44,21 @@ function ObfuscateCode($code) {
     # get all function definitions
     $functionDefinitions = $ast.FindAll({ param([System.Management.Automation.Language.Ast] $Ast) 
         $Ast -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
-    
+
     # get all command calls
     $allCommandCalls = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
-    
+
     # get all variable expressions
     $variableExpressions = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)
 
     $stringAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and ($args[0].StringConstantType -eq "DoubleQuoted" -or $args[0].StringConstantType -eq "SingleQuoted") }, $true)
 
+    # Process function definitions and create replacement map
     foreach ($func in $functionDefinitions) {
         if (-not $functionReplacementMap.ContainsKey($func.Name)) {
             $functionReplacementMap[$func.Name] = ObfuscateFunctionNames $func.Name
         }
-        
+
         # handle parameters in function definition
         if ($func.Parameters) {
             foreach ($param in $func.Parameters) {
@@ -79,7 +81,7 @@ function ObfuscateCode($code) {
             }
         }
     }
-    
+
     # process regular variables
     foreach ($var in $variableExpressions) {
         $varName = $var.VariablePath.UserPath
@@ -87,40 +89,52 @@ function ObfuscateCode($code) {
             $variableReplacementMap[$varName] = ObfuscateVariables $var.Extent.Text
         }
     }
-    
-    $allReplacements = @()
-    
-    # add function definitions
-    foreach ($func in $functionDefinitions) {
-        $functionKeywordLength = "function ".Length
-        $actualStartOffset = $func.Extent.StartOffset + $functionKeywordLength
 
+    $allReplacements = @()
+
+    # add function definitions with improved handling
+    foreach ($func in $functionDefinitions) {
         if ($func.Name -in $functionNamesIgnore) { continue }
-        
+
+        $functionKeyword = "function "
+        $fullStartOffset = $func.Extent.StartOffset
+        $nameStartOffset = $func.Extent.StartOffset
+
+        # find actual start of function name by checking for the keyword
+        if ($func.Extent.Text.TrimStart().StartsWith($functionKeyword)) {
+            $nameStartOffset = $fullStartOffset + $func.Extent.Text.IndexOf($functionKeyword) + $functionKeyword.Length
+        }
+
         $allReplacements += @{
-            StartOffset = $actualStartOffset
+            StartOffset = $nameStartOffset
             Length = $func.Name.Length
             OriginalName = $func.Name
             Text = $func.Name
             Type = "Function"
+            RequiresKeyword = $true  # new flag to indicate this needs special handling
+            FullStartOffset = $fullStartOffset
         }
     }
-    
-    # add function calls and parameters
+
+    # add function calls and parameters with improved validation
     foreach ($call in $allCommandCalls) {
         $commandName = $call.CommandElements[0].Extent.Text
 
         if ($commandName -in $functionNamesIgnore) { continue }
 
         if ($functionReplacementMap.ContainsKey($commandName)) {
+            # verify the replacement exists and is valid
+            $newName = $functionReplacementMap[$commandName]
             $allReplacements += @{
                 StartOffset = $call.CommandElements[0].Extent.StartOffset
                 Length = $commandName.Length
                 OriginalName = $commandName
                 Text = $commandName
                 Type = "Function"
+                RequiresKeyword = $false  # function calls don't need the keyword
             }
-            
+
+            # process parameters
             for ($i = 1; $i -lt $call.CommandElements.Count; $i++) {
                 $element = $call.CommandElements[$i]
                 if ($element.Extent.Text.StartsWith('-')) {
@@ -331,7 +345,7 @@ function Get-CommandType {
         }
     }
 
-    # Cache the result for future calls
+    # cache the result for future calls
     $CommandTypeCache[$CommandName] = $result
     return $result
 }
@@ -373,5 +387,5 @@ $stuff = Get-Content $location_good -Raw
 
 $obfuscatedCode = Main $stuff
 
-$out_file = $location_good -replace ".ps1", "_obfuscated.ps1"
+$out_file = $location_good -replace ".ps1", "_obf.ps1"
 $obfuscatedCode | Out-File $out_file -Force

@@ -1,13 +1,16 @@
+# Define characters for function name generation
 $characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-function ObfuscateFunctionNames($name) {
-    return Create_Random_String
-}
+function Create_Random_String {
+    $string = $characters[(Get-Random -Minimum 26 -Maximum $characters.Length)]
 
-function Create_Random_String() {
-    $string = "KDOT!?!_"
-    for ($i = 0; $i -lt 10; $i++) {
+    for ($i = 0; $i -lt 15; $i++) {
         $string += $characters[(Get-Random -Minimum 0 -Maximum $characters.Length)]
     }
     return $string
+}
+
+function ObfuscateFunctionNames($name) {
+    $newName = Create_Random_String
+    return $newName
 }

@@ -1,6 +1,7 @@
 $bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args', '$ErrorActionPreference', '$ProgressPreference', '$PROFILE')
+$good_chars = "cdghijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-function ObfuscateVariables($variable_good) {
+function ObfuscateVariables($variable_good, $parameter) {
     $lower_var = $variable_good.ToLower()
     switch ($lower_var) {
         '$true' { return ObfuscateTrue }
@@ -13,7 +14,10 @@ function ObfuscateVariables($variable_good) {
             return $variable_good
         }
     }
-    return MakeRandomVariableName 10
+    $var = MakeRandomVariableName 10
+    $new_var_final = RandomChangeVar $var $parameter
+    Write-Host "Obfuscating variable: $variable_good to $new_var_final"
+    return $new_var_final
 }
 
 function MakeRandomVariableName($length) {
@@ -23,6 +27,41 @@ function MakeRandomVariableName($length) {
         $name += $chars[(Get-Random -Minimum 0 -Maximum $chars.Length)]
     }
     return $name
+}
+
+function RandomChangeVar($variable, $parameter) {
+    # if the variable is in good_chars, do random capitalization and randomly add a ` in front.
+    $ticks = Get-Random -Minimum 0 -Maximum 2
+    if ($parameter -eq $true) {
+        $ticks = 999
+    }
+    $variable = $variable -split ""
+    for ($i = 0; $i -lt $variable.Length; $i++) {
+        if ($i -gt 0 -and $variable[$i - 1] -eq '`' -and $good_chars.Contains($variable[$i])) {
+            continue
+        }
+
+        if ($good_chars.Contains($variable[$i]) -and ($variable[$i] -ne "")) {
+            $random = Get-Random -Minimum 0 -Maximum 2
+            $random2 = Get-Random -Minimum 0 -Maximum 2
+            if ($random -eq 0) {
+                $variable[$i] = $variable[$i].ToUpper()
+            } else {
+                $variable[$i] = $variable[$i].ToLower()
+            }
+
+            if (($random2 -eq 0) -and ($ticks -eq 0)) {
+                $variable[$i] = "``" + $variable[$i]
+            }
+        }
+    }
+    $variable = $variable -join ''
+    if ($ticks -eq 0) {
+        #insert a { at the beginning after the first character and a } at the end
+        $variable = $variable.Insert(1, "{")
+        $variable += "}"
+    }
+    return $variable
 }
 
 function ObfuscateTrue {
@@ -36,3 +75,5 @@ function ObfuscateFalse {
 function ObfuscateNull {
     return '$null'
 }
+
+#ObfuscateVariables '$this_is_a_test'

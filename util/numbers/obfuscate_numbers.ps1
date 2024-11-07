@@ -1,12 +1,14 @@
 function ObfuscateNumbers($number) {
-
+    $number_to_obf = $number
+    $obf_number = AddOrSubtractRandomEQ $number_to_obf
+    return $obf_number
 }
 
 function AddOrSubtractRandomEQ($number_to_obf) {
     #get 3 random numbers
-    $number1 = Get-Random -Minimum 1 -Maximum 10000000
-    $number2 = Get-Random -Minimum 1 -Maximum 10000000
-    $number3 = Get-Random -Minimum 1 -Maximum 10000000
+    $number1 = Get-Random -Minimum 1 -Maximum 10000
+    $number2 = Get-Random -Minimum 1 -Maximum 10000
+    $number3 = Get-Random -Minimum 1 -Maximum 10000
 
     $signs = @('+', '-')
 

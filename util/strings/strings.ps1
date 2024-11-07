@@ -177,19 +177,35 @@ function ObfuscateReplaceString($string) {
         $set_dict[$i] = $split_str[$i]
     }
 
-    $shuffled_keys = ($set_dict.Keys | Get-Random -Count $set_dict.Count)
+    $shuffled_key_locations = @()
+    for ($i = 0; $i -lt $replaces_amount; $i++) {
+        $shuffled_key_locations += $i
+    }
+
+    #this is the order we will put the keys in the string.
+    $shuffled_keys = $shuffled_key_locations | Sort-Object {Get-Random}
 
     $format_string = ""
     $arguments = @()
 
-    foreach ($key in $shuffled_keys) {
-        $format_string += "{$key}"
-        $arguments += "`"$($set_dict[$key])`""
+    #make the output look like "{1}{0}{2}" -f "b", "a", "c"
+    for ($i = 0; $i -lt $shuffled_keys.Length; $i++) {
+        $format_string += "{$($shuffled_keys[$i])}"
+        $arguments += $set_dict[$i]
     }
 
-    $out_command = "`"{0}`" -f {1}" -f $format_string, ($arguments -join ', ')
+    $format_string = '"' + $format_string + '"'
+    $arguments = '"' + ($arguments -join '", "') + '"'
 
-    return $out_command
+    $command = "($format_string -f $arguments)"
+
+    Write-Host "Obfuscated: $command"
+    Write-Host $shuffled_key_locations
+    Write-Host $shuffled_keys
+    Write-Host $format_string
+    Write-Host $arguments
+
+    return $command
 }
 
 function make_random_string($length) {
@@ -201,7 +217,7 @@ function make_random_string($length) {
 #for ($i = 0; $i -lt 1000; $i++) {
 #    $length = Get-Random -Minimum 1 -Maximum 10
 #    $string = make_random_string $length
-#    $obfuscated_string = ObfuscateString $string
+#    $obfuscated_string = ObfuscateReplaceString $string
 #    $deobfuscated_string = Invoke-Expression $obfuscated_string
 #    
 #    if ($string -ne $deobfuscated_string) {

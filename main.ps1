@@ -8,9 +8,11 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 . "$scriptPath\util\final\encodeOutput.ps1"
 . "$scriptPath\util\numbers\obfuscate_numbers.ps1"
 
-$times = 0
+$global:pass_number = 1
+
+$times = 2
 $verbose = $false
-$verbose_out_file = $false
+$verbose_out_file = $true
 
 if ($verbose_out_file) {
     #redirect standard output when we need the verbose in a file
@@ -25,6 +27,16 @@ $CommandTypeCache = @{}
 
 $functionNamesIgnore = @("CheckValidationResult")
 
+$built_in_aliases = @('foreach', 'where', 'clc', 'cli', 'clp', 'clv', 'cpi', 'cvpa', 'dbp', 'ebp', 'epal',
+    'epcsv', 'fl', 'ft', 'fw', 'gal', 'gbp', 'gc', 'gci', 'gcm', 'gdr', 'gcs', 'ghy', 'gi', 'gl', 'gm', 'gmo', 'gp',
+    'gpv', 'gps', 'group', 'gu', 'gv', 'iex', 'ihy', 'ii', 'ipmo', 'ipal', 'ipcsv', 'measure', 'mi', 'mp', 'nal',
+    'ndr', 'ni', 'nv', 'nmo', 'oh', 'rbp', 'rdr', 'ri', 'rni', 'rnp', 'rp', 'rmo', 'rv', 'gerr', 'rvpa', 'sal',
+    'sbp', 'select', 'si', 'sl', 'sp', 'saps', 'spps', 'sv', 'irm', 'iwr', 'ac', 'clear', 'compare', 'cpp', 'diff',
+    'gsv', 'sleep', 'sort', 'start', 'sasv', 'spsv', 'tee', 'write', 'cat', 'cp', 'ls', 'man', 'mount', 'mv', 'ps',
+    'rm', 'rmdir', 'cnsn', 'dnsn', 'ogv', 'shcm', 'cd', 'dir', 'echo', 'fc', 'kill', 'pwd', 'type', 'h', 'history',
+    'md', 'popd', 'pushd', 'r', 'cls', 'chdir', 'copy', 'del', 'erase', 'move', 'rd', 'ren', 'set', 'icm', 'clhy',
+    'gjb', 'rcjb', 'rjb', 'sajb', 'spjb', 'wjb', 'nsn', 'gsn', 'rsn', 'etsn', 'rcsn', 'exsn', 'sls')
+
 function ObfuscateCode($code) {
     $code_copy = $code
     $functionReplacementMap = @{}
@@ -37,10 +49,10 @@ function ObfuscateCode($code) {
     foreach ($comment in $comments) {
         $code_copy = $code_copy.Replace($comment.Content, "")
     }
-    
+
     # first pass - handle everything except barewords
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
-    
+
     # get all function definitions
     $functionDefinitions = $ast.FindAll({ param([System.Management.Automation.Language.Ast] $Ast) 
         $Ast -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
@@ -53,6 +65,8 @@ function ObfuscateCode($code) {
 
     $stringAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and ($args[0].StringConstantType -eq "DoubleQuoted" -or $args[0].StringConstantType -eq "SingleQuoted") }, $true)
 
+    $numberAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ConstantExpressionAst] -and $args[0].StaticType.Name -eq "Int32" }, $true)
+
     # Process function definitions and create replacement map
     foreach ($func in $functionDefinitions) {
         if (-not $functionReplacementMap.ContainsKey($func.Name)) {
@@ -64,7 +78,7 @@ function ObfuscateCode($code) {
             foreach ($param in $func.Parameters) {
                 $paramName = $param.Name.VariablePath.UserPath
                 if (-not $parameterReplacementMap.ContainsKey($paramName)) {
-                    $newParamName = ObfuscateVariables $paramName
+                    $newParamName = ObfuscateVariables $paramName $true
                     $parameterReplacementMap[$paramName] = $newParamName.TrimStart('$')
                     $variableReplacementMap[$paramName] = $newParamName
                 }
@@ -74,7 +88,7 @@ function ObfuscateCode($code) {
             foreach ($param in $func.Body.ParamBlock.Parameters) {
                 $paramName = $param.Name.VariablePath.UserPath
                 if (-not $parameterReplacementMap.ContainsKey($paramName)) {
-                    $newParamName = ObfuscateVariables $paramName
+                    $newParamName = ObfuscateVariables $paramName $true
                     $parameterReplacementMap[$paramName] = $newParamName.TrimStart('$')
                     $variableReplacementMap[$paramName] = $newParamName
                 }
@@ -244,20 +258,36 @@ function ObfuscateCode($code) {
 
     $newAst = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
     $barewordAsts = $newAst.FindAll({ ($args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $args[0].StringConstantType -eq "BareWord") -or ($args[0] -is [System.Management.Automation.Language.TypeExpressionAst]) }, $true)
-    
+    $bareword_Commands = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
+    $numberAsts = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.ConstantExpressionAst] -and $args[0].StaticType.Name -eq "Int32" }, $true)
+
     $barewordReplacements = @()
+    $numberReplacements = @()
     
     foreach ($bareword in $barewordAsts) {
         if ($bareword.Extent.Text.Length -lt 3) { continue }
         if ($functionReplacementMap.ContainsKey($bareword.Extent.Text)) { continue }
+        
+        # check parent to see if this is a command
+        $isCommandFirst = $false
+        if ($bareword.Parent -is [System.Management.Automation.Language.CommandAst]) {
+            # check if its the first bareword (the actual command)
+            $commandElements = $bareword.Parent.CommandElements
+            $isCommandFirst = $commandElements[0].Extent.Text -eq $bareword.Extent.Text
+            
+            # if not then skip
+            if (-not $isCommandFirst) {
+                continue
+            }
+        }
         
         # get command type information
         $commandInfo = Get-CommandType -CommandName $bareword.Extent.Text
         
         # generate a new random replacement for each instance
         # pass the command info to ObfuscateCommandTypes
-        $newBarewordName = ObfuscateCommandTypes -CommandText $bareword.Extent.Text -CommandInfo $commandInfo
-        
+        $newBarewordName = ObfuscateCommandTypes -CommandText $bareword.Extent.Text -CommandInfo $commandInfo -RealBearWord $isCommandFirst
+
         $barewordReplacements += @{
             StartOffset = $bareword.Extent.StartOffset
             Length = $bareword.Extent.Text.Length
@@ -270,16 +300,50 @@ function ObfuscateCode($code) {
         }
     }
 
-    # second pass replacements
-    $barewordReplacements = $barewordReplacements | Sort-Object { $_.StartOffset } -Descending
-    
+    # too many numbers lol
+    if ($global:pass_number -lt 2) {
+        foreach ($number in $numberAsts) {
+            $numberText = $number.Extent.Text
+            if ($numberReplacementMap.ContainsKey($numberText)) { continue }
+            
+            $newNumber = ObfuscateNumbers $numberText
+            $numberReplacements += @{
+                StartOffset = $number.Extent.StartOffset
+                Length = $number.Extent.Text.Length
+                OriginalName = $numberText
+                Text = $numberText
+                NewName = $newNumber
+                Type = "Number"
+            }
+        }
+    }
+
+
+    $allReplacements = @()
+
     foreach ($replacement in $barewordReplacements) {
-        Write-Host "Second Pass - Replacing bareword '$($replacement.Text)' at position $($replacement.StartOffset) with '$($replacement.NewName)'"
+        $allReplacements += $replacement
+    }
+
+    foreach ($replacement in $numberReplacements) {
+        $allReplacements += $replacement
+    }
+
+    $allReplacements = $allReplacements | Sort-Object { $_.StartOffset } -Descending
+
+
+    foreach ($replacement in $allReplacements) {
+        $newName = switch ($replacement.Type) {
+            "Bareword" { $replacement.NewName }
+            "Number" { $replacement.NewName }
+        }
+        
+        Write-Host "Second Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
         
         $code_copy = Replace-TextAtPosition -SourceText $code_copy `
                                         -StartPosition $replacement.StartOffset `
                                         -Length $replacement.Length `
-                                        -ReplacementText $replacement.NewName
+                                        -ReplacementText $newName
     }
     
     return $code_copy
@@ -356,6 +420,7 @@ function Main($payload) {
         $totalSteps = ($times * 2) + 1
         $currentStep = 0
         while ($times -ne 1) {
+            $global:pass_number++
             $times = $times - 1
             $obfuscatedCode = Encrypt-Payload $obfuscatedCode 
             $currentStep++

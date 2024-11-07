@@ -4,8 +4,14 @@ $banned = "abefnrtvABEFNRTV"
 function ObfuscateCommandTypes {
     param(
         [string]$CommandText,
-        [hashtable]$CommandInfo
+        [hashtable]$CommandInfo,
+        [bool]$RealBearWord = $false
     )
+
+    if ($RealBearWord) {
+        return DotObfuscateBareWord $CommandText
+    }
+
     if ($CommandInfo.IsBuiltIn) {
         switch ($CommandInfo.Type) {
             "Cmdlet" {
@@ -14,18 +20,21 @@ function ObfuscateCommandTypes {
                     if ($verbose) {
                         Write-Host $CommandText NOUN
                     }
-                    return ObfuscateMethodsGood $CommandText
+                    return DotObfuscateBareWord $CommandText
                 }
                 if ($verbose) {
                     Write-Host $CommandText VERB
                 }
-                return ObfuscateMethodsGood $CommandText
+                return DotObfuscateBareWord $CommandText
+            }
+            "BuiltinAlias" {
+                return DotObfuscateBareWord $CommandText
             }
             "Function" {
                 if ($verbose) {
                     Write-Host $CommandText FUNCTION
                 }
-                return RandomUpercaseCharacters $CommandText
+                return DotObfuscateBareWord $CommandText
             }
             "Alias" {
                 return RandomUpercaseCharacters $CommandText
@@ -69,34 +78,6 @@ function RandomUpercaseCharacters($string) {
     return $string -join ''
 }
 
-
-function ObfuscateMethodCalls($string, $quotes = $true) {
-    $out_str = ""
-    $quotes_random = Get-Random -Minimum 0 -Maximum 2
-    if ($quotes -eq $false) {
-        $quotes_random = 1
-    }
-    $string = $string -split ""
-    $string | ForEach-Object {
-        if ($printables.Contains($_) -and ($_ -ne "") -and (!($banned.Contains($_)))) {
-            $random = Get-Random -Minimum 0 -Maximum 2
-            if ($random -eq 0) {
-                $out_str += '`' + $_
-            }
-            else {
-                $out_str += $_
-            }
-        }
-        else {
-            $out_str += $_
-        }
-    }
-    if ($quotes_random -eq 0) {
-        $out_str = "`"$out_str`""
-    }
-    return $out_str
-}
-
 function ObfuscateMethodsGood($string) {
     $last = $false
     $first = $true
@@ -129,6 +110,59 @@ function ObfuscateMethodsGood($string) {
         }
     }
     return $out_str
+}
+
+function DotObfuscateBareWord($string) {
+    $split_str = $string -split ""
+    $map = @()
+    # get the char value for each char in the string
+    $split_str | ForEach-Object {
+        if ($_ -ne "") {
+            $map += [int][char]$_
+        }
+    }
+
+    $out_str = ".("
+
+    $map | ForEach-Object {
+        if ($global:pass_number -lt 2) {
+            $obfuscated = AddOrSubtractRandomEQ $_
+            $out_str += "[char]($obfuscated)+"
+        } else {
+            $out_str += "[char]($_)+"
+        }
+
+    }
+    $out_str = $out_str.Substring(0, $out_str.Length - 1)
+    $out_str += ")"
+    return $out_str
+}
+
+function AddOrSubtractRandomEQ($number_to_obf) {
+    #get 3 random numbers
+    $number1 = Get-Random -Minimum 1 -Maximum 10000
+    $number2 = Get-Random -Minimum 1 -Maximum 10000
+    $number3 = Get-Random -Minimum 1 -Maximum 10000
+
+    $signs = @('+', '-')
+
+    $num1_sign = Get-Random -Minimum 0 -Maximum 2
+    $num2_sign = Get-Random -Minimum 0 -Maximum 2
+    $num3_sign = Get-Random -Minimum 0 -Maximum 2
+
+    $sign1 = $signs[$num1_sign]
+    $sign2 = $signs[$num2_sign]
+    $sign3 = $signs[$num3_sign]
+
+    $opposite_sign1 = $signs[1 - $num1_sign]
+    $opposite_sign2 = $signs[1 - $num2_sign]
+    $opposite_sign3 = $signs[1 - $num3_sign]
+
+    $final_number = "$number_to_obf $sign1 $number1 $sign2 $number2 $sign3 $number3"
+    $out_final = Invoke-Expression $final_number
+
+    $new_problem = "$out_final $opposite_sign1 $number1 $opposite_sign2 $number2 $opposite_sign3 $number3"
+    return "($new_problem)"
 }
 
 #ObfuscateMethodsGood "KDOT_frslwSZslJ"

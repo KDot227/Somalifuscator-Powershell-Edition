@@ -164,5 +164,3 @@ function AddOrSubtractRandomEQ($number_to_obf) {
     $new_problem = "$out_final $opposite_sign1 $number1 $opposite_sign2 $number2 $opposite_sign3 $number3"
     return "($new_problem)"
 }
-
-#ObfuscateMethodsGood "KDOT_frslwSZslJ"

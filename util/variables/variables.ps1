@@ -65,7 +65,33 @@ function RandomChangeVar($variable, $parameter) {
 }
 
 function ObfuscateTrue {
-    return '$true'
+    #ideas from https://github.com/t3l3machus/PowerShell-Obfuscation-Bible?tab=readme-ov-file#obfuscate-boolean-values
+    $choices = @(
+        '[bool][bool]',
+        '[bool][char]',
+        '[bool][int] ',
+        '[bool][string]',
+        '[bool][double]',
+        '[bool][short]',
+        '[bool][decimal]',
+        '[bool][byte]',
+        '[bool][timespan]',
+        '[bool][datetime]',
+        '(9999 -eq 9999)',
+        '([math]::Round([math]::PI) -eq (4583 - 4580))',
+        '[Math]::E -ne [Math]::PI',
+        '[bool](![bool]$null)',
+        '!!!![bool][bool][bool][bool][bool][bool]',
+        '![bool]$null',
+        '![bool]$False',
+        '[bool][System.Collections.ArrayList]',
+        '[bool][System.Collections.CaseInsensitiveComparer]',
+        '[bool][System.Collections.Hashtable]'
+    )
+
+    $choice = Get-Random -Minimum 0 -Maximum $choices.Length
+    $final = $choices[$choice]
+    return "($final)"
 }
 
 function ObfuscateFalse {

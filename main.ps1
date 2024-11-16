@@ -7,12 +7,15 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 . "$scriptPath\util\commands\function_names.ps1"
 . "$scriptPath\util\final\encodeOutput.ps1"
 . "$scriptPath\util\numbers\obfuscate_numbers.ps1"
+. "$scriptPath\util\wrap\wrap.ps1"
+. "$scriptPath\util\MBA_OBF\mixed_boolean_arithmetic.ps1"
 
 $global:pass_number = 1
 
-$times = 2
+$times_wrap = 2
 $verbose = $false
-$verbose_out_file = $true
+$verbose_out_file = $false
+$mba_depth = 2
 
 if ($verbose_out_file) {
     #redirect standard output when we need the verbose in a file
@@ -84,6 +87,7 @@ function ObfuscateCode($code) {
                 }
             }
         }
+
         if ($func.Body.ParamBlock) {
             foreach ($param in $func.Body.ParamBlock.Parameters) {
                 $paramName = $param.Name.VariablePath.UserPath
@@ -166,7 +170,7 @@ function ObfuscateCode($code) {
             }
         }
     }
-    
+
     # add variables
     foreach ($var in $variableExpressions) {
         $varName = $var.VariablePath.UserPath
@@ -179,7 +183,7 @@ function ObfuscateCode($code) {
             }
             $parent = $parent.Parent
         }
-        
+
         if (-not $isParameterName) {
             $allReplacements += @{
                 StartOffset = $var.Extent.StartOffset
@@ -194,7 +198,7 @@ function ObfuscateCode($code) {
     # add strings
     foreach ($string in $stringAsts) {
         $stringText = $string.Extent.Text
-        
+
         # handle empty strings
         if ([string]::IsNullOrWhiteSpace($stringText) -or $stringText -eq '""' -or $stringText -eq "''") {
             $allReplacements += @{
@@ -226,7 +230,7 @@ function ObfuscateCode($code) {
         if (-not $stringReplacementMap.ContainsKey($stringText)) {
             $stringReplacementMap[$stringText] = ObfuscateString $stringText
         }
-        
+
         $allReplacements += @{
             StartOffset = $string.Extent.StartOffset
             Length = $string.Extent.Text.Length
@@ -235,10 +239,10 @@ function ObfuscateCode($code) {
             Type = "String"
         }
     }
-    
+
     # first pass replacements
     $allReplacements = $allReplacements | Sort-Object { $_.StartOffset } -Descending
-    
+
     foreach ($replacement in $allReplacements) {
         $newName = switch ($replacement.Type) {
             "Function" { $functionReplacementMap[$replacement.OriginalName] }
@@ -247,9 +251,9 @@ function ObfuscateCode($code) {
             "String" { $stringReplacementMap[$replacement.OriginalName] }
             "EmptyString" { $replacement.NewName }
         }
-        
+
         Write-Host "First Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
-        
+
         $code_copy = Replace-TextAtPosition -SourceText $code_copy `
                                         -StartPosition $replacement.StartOffset `
                                         -Length $replacement.Length `
@@ -258,32 +262,32 @@ function ObfuscateCode($code) {
 
     $newAst = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
     $barewordAsts = $newAst.FindAll({ ($args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $args[0].StringConstantType -eq "BareWord") -or ($args[0] -is [System.Management.Automation.Language.TypeExpressionAst]) }, $true)
-    $bareword_Commands = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
+    $ArithmeticAsts = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.BinaryExpressionAst] -and @("Plus", "Subtract", "Band", "Bxor", "Bor") -contains $args[0].Operator }, $true)
+    Write-Host "Found $($barewordAsts.Count) barewords and $($ArithmeticAsts.Count) arithmetic operations"
     $numberAsts = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.ConstantExpressionAst] -and $args[0].StaticType.Name -eq "Int32" }, $true)
 
     $barewordReplacements = @()
     $numberReplacements = @()
-    
+
     foreach ($bareword in $barewordAsts) {
-        if ($bareword.Extent.Text.Length -lt 3) { continue }
         if ($functionReplacementMap.ContainsKey($bareword.Extent.Text)) { continue }
-        
+
         # check parent to see if this is a command
         $isCommandFirst = $false
         if ($bareword.Parent -is [System.Management.Automation.Language.CommandAst]) {
             # check if its the first bareword (the actual command)
             $commandElements = $bareword.Parent.CommandElements
             $isCommandFirst = $commandElements[0].Extent.Text -eq $bareword.Extent.Text
-            
+
             # if not then skip
             if (-not $isCommandFirst) {
                 continue
             }
         }
-        
+
         # get command type information
         $commandInfo = Get-CommandType -CommandName $bareword.Extent.Text
-        
+
         # generate a new random replacement for each instance
         # pass the command info to ObfuscateCommandTypes
         $newBarewordName = ObfuscateCommandTypes -CommandText $bareword.Extent.Text -CommandInfo $commandInfo -RealBearWord $isCommandFirst
@@ -305,7 +309,7 @@ function ObfuscateCode($code) {
         foreach ($number in $numberAsts) {
             $numberText = $number.Extent.Text
             if ($numberReplacementMap.ContainsKey($numberText)) { continue }
-            
+
             $newNumber = ObfuscateNumbers $numberText
             $numberReplacements += @{
                 StartOffset = $number.Extent.StartOffset
@@ -337,15 +341,126 @@ function ObfuscateCode($code) {
             "Bareword" { $replacement.NewName }
             "Number" { $replacement.NewName }
         }
-        
+
         Write-Host "Second Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
-        
+
         $code_copy = Replace-TextAtPosition -SourceText $code_copy `
                                         -StartPosition $replacement.StartOffset `
                                         -Length $replacement.Length `
                                         -ReplacementText $newName
     }
-    
+
+    $newAst_pass3 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
+    $AssignmentExpressionAst = $newAst_pass3.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)
+    $assignment_expressions = @()
+
+    foreach ($assignment in $AssignmentExpressionAst) {
+        $text = $assignment.Extent.Text
+
+        $obfuscated = WrapObfuscate $text
+
+        $assignment_expressions += @{
+            StartOffset = $assignment.Extent.StartOffset
+            Length = $assignment.Extent.Text.Length
+            OriginalName = $text
+            Text = $text
+            NewName = $obfuscated
+            Type = "Assignment"
+        }
+    }
+
+    $assignment_expressions = $assignment_expressions | Sort-Object { $_.StartOffset } -Descending
+
+    foreach ($replacement in $assignment_expressions) {
+        $newName = switch ($replacement.Type) {
+            "Assignment" { $replacement.NewName }
+        }
+
+        Write-Host "Third Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
+
+        $code_copy = Replace-TextAtPosition -SourceText $code_copy `
+                                        -StartPosition $replacement.StartOffset `
+                                        -Length $replacement.Length `
+                                        -ReplacementText $newName
+    }
+
+
+    $newAst_pass4 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
+    $AssignmentStatmentAst = $newAst_pass4.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)
+
+    $assignment_statements = @()
+
+    foreach ($assignment in $AssignmentStatmentAst) {
+        $text = $assignment.Extent.Text
+
+        $obfuscated = WrapObfuscate $text
+
+        $assignment_statements += @{
+            StartOffset = $assignment.Extent.StartOffset
+            Length = $assignment.Extent.Text.Length
+            OriginalName = $text
+            Text = $text
+            NewName = $obfuscated
+            Type = "Assignment"
+        }
+    }
+
+    $assignment_statements = $assignment_statements | Sort-Object { $_.StartOffset } -Descending
+
+    foreach ($replacement in $assignment_statements) {
+        $newName = switch ($replacement.Type) {
+            "Assignment" { $replacement.NewName }
+        }
+
+        Write-Host "Fourth Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
+
+        $code_copy = Replace-TextAtPosition -SourceText $code_copy `
+                                        -StartPosition $replacement.StartOffset `
+                                        -Length $replacement.Length `
+                                        -ReplacementText $newName
+    }
+
+    $newAst_pass5 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
+    $binaryExpressionAst = $newAst_pass5.FindAll({ $args[0] -is [System.Management.Automation.Language.BinaryExpressionAst] -and @("Plus", "Subtract", "Band", "Bxor", "Bor") -contains $args[0].Operator }, $true)
+
+    #get the binary expressions that only have 2 ConstantExpressionAst children
+    $binary_expressions = @()
+
+    foreach ($binary in $binaryExpressionAst) {
+        $left = $binary.Left
+        $right = $binary.Right
+
+        if ($left -is [System.Management.Automation.Language.ConstantExpressionAst] -and $right -is [System.Management.Automation.Language.ConstantExpressionAst]) {
+            $text = $binary.Extent.Text
+
+            $obfuscated = ApplyMBAObfuscation $left.Extent.Text $right.Extent.Text $binary.Operator $mba_depth
+
+            $binary_expressions += @{
+                StartOffset = $binary.Extent.StartOffset
+                Length = $binary.Extent.Text.Length
+                OriginalName = $text
+                Text = $text
+                NewName = $obfuscated
+                Type = "Binary"
+            }
+        }
+    }
+
+    $binary_expressions = $binary_expressions | Sort-Object { $_.StartOffset } -Descending
+
+    foreach ($replacement in $binary_expressions) {
+        $newName = switch ($replacement.Type) {
+            "Binary" { $replacement.NewName }
+        }
+
+        Write-Host "Fifth Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
+
+        $code_copy = Replace-TextAtPosition -SourceText $code_copy `
+                                        -StartPosition $replacement.StartOffset `
+                                        -Length $replacement.Length `
+                                        -ReplacementText $newName
+    }
+
     return $code_copy
 }
 
@@ -356,13 +471,12 @@ function Replace-TextAtPosition {
         [int]$Length,
         [string]$ReplacementText
     )
-    
+
     try {
         $before = $SourceText.Substring(0, $StartPosition)
         $after = $SourceText.Substring($StartPosition + $Length)
         return $before + $ReplacementText + $after
-    }
-    catch {
+    } catch {
         Write-Host "Error in Replace-TextAtPosition:"
         Write-Host "Source length: $($SourceText.Length)"
         Write-Host "Start: $StartPosition"
@@ -416,12 +530,12 @@ function Get-CommandType {
 
 function Main($payload) {
     $obfuscatedCode = ObfuscateCode $payload
-    if ($times -ne 0) {
-        $totalSteps = ($times * 2) + 1
+    if ($times_wrap -ne 0) {
+        $totalSteps = ($times_wrap * 2) + 1
         $currentStep = 0
-        while ($times -ne 1) {
+        while ($times_wrap -ne 0) {
             $global:pass_number++
-            $times = $times - 1
+            $times_wrap = $times_wrap - 1
             $obfuscatedCode = Encrypt-Payload $obfuscatedCode 
             $currentStep++
             Write-Progress -Activity "Obfuscating Code" -Status "Encrypting Payload" -PercentComplete (($currentStep / $totalSteps) * 100)
@@ -446,7 +560,12 @@ function Get-FileLocation {
     }
 }
 
-$location_good = Get-FileLocation
+#see if file was passed in through command line
+if ($args.Count -eq 1) {
+    $location_good = $args[0]
+} else {
+    $location_good = Get-FileLocation
+}
 
 $stuff = Get-Content $location_good -Raw
 

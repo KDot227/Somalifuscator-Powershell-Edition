@@ -1,5 +1,5 @@
 $bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args', '$ErrorActionPreference', '$ProgressPreference', '$PROFILE')
-$good_chars = "cdghijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+$good_chars = "bcdghijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 function ObfuscateVariables($variable_good, $parameter) {
     $lower_var = $variable_good.ToLower()
@@ -29,9 +29,22 @@ function MakeRandomVariableName($length) {
     return $name
 }
 
+function RandomCapitalization($string) {
+    $string = $string -split ""
+    for ($i = 0; $i -lt $string.Length; $i++) {
+        $random = Get-Random -Minimum 0 -Maximum 2
+        if ($random -eq 0) {
+            $string[$i] = $string[$i].ToUpper()
+        } else {
+            $string[$i] = $string[$i].ToLower()
+        }
+    }
+    $string = $string -join ''
+    return $string
+}
+
 function RandomChangeVar($variable, $parameter) {
-    # if the variable is in good_chars, do random capitalization and randomly add a ` in front.
-    $ticks = Get-Random -Minimum 0 -Maximum 2
+    $ticks = Get-Random -Minimum 0 -Maximum 5
     if ($parameter -eq $true) {
         $ticks = 999
     }
@@ -42,27 +55,51 @@ function RandomChangeVar($variable, $parameter) {
         }
 
         if ($good_chars.Contains($variable[$i]) -and ($variable[$i] -ne "")) {
-            $random = Get-Random -Minimum 0 -Maximum 2
-            $random2 = Get-Random -Minimum 0 -Maximum 2
-            if ($random -eq 0) {
-                $variable[$i] = $variable[$i].ToUpper()
-            } else {
-                $variable[$i] = $variable[$i].ToLower()
-            }
+            $variable[$i] = RandomCapitalization($variable[$i])
 
-            if (($random2 -eq 0) -and ($ticks -eq 0)) {
+            if ($variable[$i] -cmatch '[A-Z]' -and (Get-Random -Minimum 0 -Maximum 2) -eq 0 -and ($ticks -lt 4)) {
                 $variable[$i] = "``" + $variable[$i]
             }
         }
     }
     $variable = $variable -join ''
-    if ($ticks -eq 0) {
-        #insert a { at the beginning after the first character and a } at the end
+    if ($ticks -lt 4) {
         $variable = $variable.Insert(1, "{")
         $variable += "}"
     }
     return $variable
 }
+
+function ReObfuscateVariable($variable) {
+    $has_ticks = $variable -match "``"
+    if ($has_ticks) {
+        $variable = $variable.Substring(2, $variable.Length - 3)
+        $variable = $variable.Replace("``", "")
+        $ticks = Get-Random -Minimum 0 -Maximum 5
+        $variable = $variable -split ""
+        for ($i = 0; $i -lt $variable.Length; $i++) {
+            if ($good_chars.Contains($variable[$i]) -and ($variable[$i] -ne "")) {
+                $variable[$i] = RandomCapitalization($variable[$i])
+                if ($variable[$i] -cmatch '[A-Z]' -and (Get-Random -Minimum 0 -Maximum 2) -eq 0 -and ($ticks -lt 4)) {
+                    $variable[$i] = "``" + $variable[$i]
+                }
+            }
+        }
+        $variable = $variable -join ''
+        $to_return = "`${" + $variable + "}"
+        return $to_return
+    } else {
+        $variable = $variable -split ""
+        for ($i = 0; $i -lt $variable.Length; $i++) {
+            if ($good_chars.Contains($variable[$i]) -and ($variable[$i] -ne "")) {
+                $variable[$i] = RandomCapitalization($variable[$i])
+            }
+        }
+        $variable = $variable -join ''
+        return $variable
+    }
+}
+
 
 function ObfuscateTrue {
     #ideas from https://github.com/t3l3machus/PowerShell-Obfuscation-Bible?tab=readme-ov-file#obfuscate-boolean-values

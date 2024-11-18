@@ -12,7 +12,8 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 
 $global:pass_number = 1
 
-$times_wrap = 2
+$times_wrap = 0
+$wrap_obfuscation = $true
 $verbose = $false
 $verbose_out_file = $false
 $mba_depth = 2
@@ -252,6 +253,10 @@ function ObfuscateCode($code) {
             "EmptyString" { $replacement.NewName }
         }
 
+        if ($replacement.Type -eq "Variable") {
+            $newName = ReObfuscateVariable $newName
+        }
+
         Write-Host "First Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
 
         $code_copy = Replace-TextAtPosition -SourceText $code_copy `
@@ -350,74 +355,75 @@ function ObfuscateCode($code) {
                                         -ReplacementText $newName
     }
 
-    $newAst_pass3 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
-    $AssignmentExpressionAst = $newAst_pass3.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)
-    $assignment_expressions = @()
-
-    foreach ($assignment in $AssignmentExpressionAst) {
-        $text = $assignment.Extent.Text
-
-        $obfuscated = WrapObfuscate $text
-
-        $assignment_expressions += @{
-            StartOffset = $assignment.Extent.StartOffset
-            Length = $assignment.Extent.Text.Length
-            OriginalName = $text
-            Text = $text
-            NewName = $obfuscated
-            Type = "Assignment"
+    if ($wrap_obfuscation) {
+        $newAst_pass3 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
+        $AssignmentExpressionAst = $newAst_pass3.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)
+        $assignment_expressions = @()
+    
+        foreach ($assignment in $AssignmentExpressionAst) {
+            $text = $assignment.Extent.Text
+    
+            $obfuscated = WrapObfuscate $text
+    
+            $assignment_expressions += @{
+                StartOffset = $assignment.Extent.StartOffset
+                Length = $assignment.Extent.Text.Length
+                OriginalName = $text
+                Text = $text
+                NewName = $obfuscated
+                Type = "Assignment"
+            }
         }
-    }
-
-    $assignment_expressions = $assignment_expressions | Sort-Object { $_.StartOffset } -Descending
-
-    foreach ($replacement in $assignment_expressions) {
-        $newName = switch ($replacement.Type) {
-            "Assignment" { $replacement.NewName }
-        }
-
-        Write-Host "Third Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
-
-        $code_copy = Replace-TextAtPosition -SourceText $code_copy `
-                                        -StartPosition $replacement.StartOffset `
-                                        -Length $replacement.Length `
-                                        -ReplacementText $newName
-    }
-
-
-    $newAst_pass4 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
-    $AssignmentStatmentAst = $newAst_pass4.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)
-
-    $assignment_statements = @()
-
-    foreach ($assignment in $AssignmentStatmentAst) {
-        $text = $assignment.Extent.Text
-
-        $obfuscated = WrapObfuscate $text
-
-        $assignment_statements += @{
-            StartOffset = $assignment.Extent.StartOffset
-            Length = $assignment.Extent.Text.Length
-            OriginalName = $text
-            Text = $text
-            NewName = $obfuscated
-            Type = "Assignment"
-        }
-    }
-
-    $assignment_statements = $assignment_statements | Sort-Object { $_.StartOffset } -Descending
-
-    foreach ($replacement in $assignment_statements) {
-        $newName = switch ($replacement.Type) {
-            "Assignment" { $replacement.NewName }
+    
+        $assignment_expressions = $assignment_expressions | Sort-Object { $_.StartOffset } -Descending
+    
+        foreach ($replacement in $assignment_expressions) {
+            $newName = switch ($replacement.Type) {
+                "Assignment" { $replacement.NewName }
+            }
+    
+            Write-Host "Third Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
+    
+            $code_copy = Replace-TextAtPosition -SourceText $code_copy `
+                                            -StartPosition $replacement.StartOffset `
+                                            -Length $replacement.Length `
+                                            -ReplacementText $newName
         }
 
-        Write-Host "Fourth Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
-
-        $code_copy = Replace-TextAtPosition -SourceText $code_copy `
-                                        -StartPosition $replacement.StartOffset `
-                                        -Length $replacement.Length `
-                                        -ReplacementText $newName
+        $newAst_pass4 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
+        $AssignmentStatmentAst = $newAst_pass4.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)
+    
+        $assignment_statements = @()
+    
+        foreach ($assignment in $AssignmentStatmentAst) {
+            $text = $assignment.Extent.Text
+    
+            $obfuscated = WrapObfuscate $text
+    
+            $assignment_statements += @{
+                StartOffset = $assignment.Extent.StartOffset
+                Length = $assignment.Extent.Text.Length
+                OriginalName = $text
+                Text = $text
+                NewName = $obfuscated
+                Type = "Assignment"
+            }
+        }
+    
+        $assignment_statements = $assignment_statements | Sort-Object { $_.StartOffset } -Descending
+    
+        foreach ($replacement in $assignment_statements) {
+            $newName = switch ($replacement.Type) {
+                "Assignment" { $replacement.NewName }
+            }
+    
+            Write-Host "Fourth Pass - Replacing '$($replacement.Text)' at position $($replacement.StartOffset) with '$newName' (Type: $($replacement.Type))"
+    
+            $code_copy = Replace-TextAtPosition -SourceText $code_copy `
+                                            -StartPosition $replacement.StartOffset `
+                                            -Length $replacement.Length `
+                                            -ReplacementText $newName
+        }
     }
 
     $newAst_pass5 = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)

@@ -47,7 +47,7 @@ function Encrypt-String($key, $plaintext) {
     return [System.Convert]::ToBase64String($fullData)
 }
 
-function Decrypt-String($key, $encryptedStringWithIV) {r
+function Decrypt-String($key, $encryptedStringWithIV) {
     $bytes = [System.Convert]::FromBase64String($encryptedStringWithIV)
     $IV = $bytes[0..15]
     $aesManaged = Create-AesManagedObject $key $IV

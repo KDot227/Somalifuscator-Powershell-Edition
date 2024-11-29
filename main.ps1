@@ -1,3 +1,12 @@
+param(
+    [string]$file_location_cmdline,
+    [string]$times_wrap_cmdline,
+    [string]$wrap_obfuscation_cmdline,
+    [string]$verbose_cmdline,
+    [string]$verbose_out_file_cmdline,
+    [string]$mba_depth_cmdline
+)
+
 #python import type shi
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 
@@ -13,10 +22,10 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $global:pass_number = 1
 
 $times_wrap = 0
-$wrap_obfuscation = $true
+$wrap_obfuscation = $false
 $verbose = $false
 $verbose_out_file = $false
-$mba_depth = 2
+$mba_depth = 1
 
 if ($verbose_out_file) {
     #redirect standard output when we need the verbose in a file
@@ -49,28 +58,35 @@ function ObfuscateCode($code) {
     $stringReplacementMap = @{}
     $numberReplacementMap = @{}
 
-    $comments = [System.Management.Automation.PSParser]::Tokenize($code_copy, [ref]$null) | Where-Object { $_.Type -eq "Comment" }
-    foreach ($comment in $comments) {
-        $code_copy = $code_copy.Replace($comment.Content, "")
-    }
+    Write-host -1
+
+    #$comments = [System.Management.Automation.PSParser]::Tokenize($code_copy, [ref]$null) | Where-Object { $_.Type -eq "Comment" }
+    #foreach ($comment in $comments) {
+    #    $code_copy = $code_copy.Replace($comment.Content, "")
+    #}
+
+    Write-Host 0
 
     # first pass - handle everything except barewords
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($code_copy, [ref]$null, [ref]$null)
+
+    Write-Host 1
 
     # get all function definitions
     $functionDefinitions = $ast.FindAll({ param([System.Management.Automation.Language.Ast] $Ast) 
         $Ast -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
 
+    Write-Host 2
+
     # get all command calls
     $allCommandCalls = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
 
+    Write-Host 3
     # get all variable expressions
     $variableExpressions = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)
-
+    Write-Host 4
     $stringAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and ($args[0].StringConstantType -eq "DoubleQuoted" -or $args[0].StringConstantType -eq "SingleQuoted") }, $true)
-
-    $numberAsts = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ConstantExpressionAst] -and $args[0].StaticType.Name -eq "Int32" }, $true)
-
+    Write-Host 5
     # Process function definitions and create replacement map
     foreach ($func in $functionDefinitions) {
         if (-not $functionReplacementMap.ContainsKey($func.Name)) {
@@ -100,6 +116,8 @@ function ObfuscateCode($code) {
             }
         }
     }
+
+    Write-Host 6
 
     # process regular variables
     foreach ($var in $variableExpressions) {
@@ -134,6 +152,8 @@ function ObfuscateCode($code) {
             FullStartOffset = $fullStartOffset
         }
     }
+
+    Write-Host 7
 
     # add function calls and parameters with improved validation
     foreach ($call in $allCommandCalls) {
@@ -171,6 +191,8 @@ function ObfuscateCode($code) {
             }
         }
     }
+
+    Write-Host 8
 
     # add variables
     foreach ($var in $variableExpressions) {
@@ -269,13 +291,18 @@ function ObfuscateCode($code) {
     $barewordAsts = $newAst.FindAll({ ($args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $args[0].StringConstantType -eq "BareWord") -or ($args[0] -is [System.Management.Automation.Language.TypeExpressionAst]) }, $true)
     $ArithmeticAsts = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.BinaryExpressionAst] -and @("Plus", "Subtract", "Band", "Bxor", "Bor") -contains $args[0].Operator }, $true)
     Write-Host "Found $($barewordAsts.Count) barewords and $($ArithmeticAsts.Count) arithmetic operations"
-    $numberAsts = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.ConstantExpressionAst] -and $args[0].StaticType.Name -eq "Int32" }, $true)
+    #$numberAsts = $newAst.FindAll({ $args[0] -is [System.Management.Automation.Language.ConstantExpressionAst] -and $args[0].StaticType.Name -eq "Int32" }, $true)
 
     $barewordReplacements = @()
     $numberReplacements = @()
 
     foreach ($bareword in $barewordAsts) {
         if ($functionReplacementMap.ContainsKey($bareword.Extent.Text)) { continue }
+
+        # if bareword is too big then skip
+        if ($bareword.Extent.Text.Length -gt 100) {
+            continue
+        }
 
         # check parent to see if this is a command
         $isCommandFirst = $false
@@ -309,23 +336,32 @@ function ObfuscateCode($code) {
         }
     }
 
-    # too many numbers lol
-    if ($global:pass_number -lt 2) {
-        foreach ($number in $numberAsts) {
-            $numberText = $number.Extent.Text
-            if ($numberReplacementMap.ContainsKey($numberText)) { continue }
-
-            $newNumber = ObfuscateNumbers $numberText
-            $numberReplacements += @{
-                StartOffset = $number.Extent.StartOffset
-                Length = $number.Extent.Text.Length
-                OriginalName = $numberText
-                Text = $numberText
-                NewName = $newNumber
-                Type = "Number"
-            }
-        }
-    }
+    ## Process numbers only in first pass
+    #if ($global:pass_number -eq 1) {
+    #    $allNumbers = $numberAsts | Where-Object { 
+    #        $numberText = $_.Extent.Text
+    #        -not $numberReplacementMap.ContainsKey($numberText) 
+    #    }
+#
+    #    # If there are more than 50 numbers, only obfuscate 30% of them randomly
+    #    if ($allNumbers.Count -gt 50) {
+    #        $numberCount = [Math]::Floor($allNumbers.Count * 0.3)
+    #        $selectedNumbers = $allNumbers | Get-Random -Count $numberCount
+    #    } else {
+    #        $selectedNumbers = $allNumbers
+    #    }
+#
+    #    $numberReplacements = $selectedNumbers | ForEach-Object {
+    #        @{
+    #            StartOffset = $_.Extent.StartOffset
+    #            Length = $_.Extent.Text.Length
+    #            OriginalName = $_.Extent.Text
+    #            Text = $_.Extent.Text
+    #            NewName = ObfuscateNumbers $_.Extent.Text
+    #            Type = "Number"
+    #        }
+    #    }
+    #}
 
 
     $allReplacements = @()
@@ -567,10 +603,30 @@ function Get-FileLocation {
 }
 
 #see if file was passed in through command line
-if ($args.Count -eq 1) {
-    $location_good = $args[0]
+if ($file_location_cmdline) {
+    $location_good = $file_location_cmdline
 } else {
     $location_good = Get-FileLocation
+}
+
+if ($times_wrap_cmdline) {
+    $times_wrap = [int]$times_wrap_cmdline
+}
+
+if ($wrap_obfuscation_cmdline) {
+    $wrap_obfuscation = [int]$wrap_obfuscation_cmdline
+}
+
+if ($verbose_cmdline) {
+    $verbose = [int]$verbose_cmdline
+}
+
+if ($verbose_out_file_cmdline) {
+    $verbose_out_file = [int]$verbose_out_file_cmdline
+}
+
+if ($mba_depth_cmdline) {
+    $mba_depth = [int]$mba_depth_cmdline
 }
 
 $stuff = Get-Content $location_good -Raw

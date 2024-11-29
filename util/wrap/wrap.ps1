@@ -3,7 +3,13 @@
 
 function WrapObfuscate($code) {
     $obfuscated_string = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($code))
-    $base64 = ObfuscateString $obfuscated_string
+
+    if ($obfuscated_string.Length -gt 1000) {
+        $base64 = $obfuscated_string
+    } else {
+        $base64 = ObfuscateString $obfuscated_string
+    }
+
     $iex_obf = DotObfuscateBareWord "Invoke-Expression"
-    return "$iex_obf([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($base64)))"
+    return "$iex_obf([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('$base64')))"
 }

@@ -1,8 +1,12 @@
-$bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args', '$ErrorActionPreference', '$ProgressPreference', '$PROFILE')
+$bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args', '$ErrorActionPreference', '$ProgressPreference', '$PROFILE', '$PID')
 $good_chars = "bcdghijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 function ObfuscateVariables($variable_good, $parameter) {
     $lower_var = $variable_good.ToLower()
+    if ($lower_var.StartsWith('$kdot_')) {
+        return $variable_good
+    }
+
     switch ($lower_var) {
         '$true' { return ObfuscateTrue }
         '$false' { return ObfuscateFalse }
@@ -14,6 +18,7 @@ function ObfuscateVariables($variable_good, $parameter) {
             return $variable_good
         }
     }
+
     $var = MakeRandomVariableName 10
     $new_var_final = RandomChangeVar $var $parameter
     Write-Host "Obfuscating variable: $variable_good to $new_var_final"
@@ -109,7 +114,6 @@ function ObfuscateTrue {
         '[bool][int] ',
         '[bool][string]',
         '[bool][double]',
-        '[bool][short]',
         '[bool][decimal]',
         '[bool][byte]',
         '[bool][timespan]',

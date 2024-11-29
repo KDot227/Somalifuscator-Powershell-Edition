@@ -251,7 +251,8 @@ function ObfuscateCode($code) {
         # handle normal strings
         if ($string.Extent.Text.Length -lt 3) { continue }
         if (-not $stringReplacementMap.ContainsKey($stringText)) {
-            $stringReplacementMap[$stringText] = ObfuscateString $stringText
+            $quote_type = if ($stringText.StartsWith("'")) { "SingleQuoted" } else { "DoubleQuoted" }
+            $stringReplacementMap[$stringText] = ObfuscateString $stringText $quote_type
         }
 
         $allReplacements += @{

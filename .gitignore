@@ -1,3 +1,4 @@
 /target
 obfuscate.log
 /other
+test*.ps1

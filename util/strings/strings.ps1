@@ -1,7 +1,7 @@
 #TODO add env var obf
 $split_string_verbose = $false
 
-function ObfuscateString($string) {
+function ObfuscateString($string, $string_type) {
     $splitting = $true
     if ($string.Length -lt 4) {
         $splitting = $false
@@ -16,6 +16,13 @@ function ObfuscateString($string) {
     if ($string -eq "") {
         return "''"
     }
+
+    # if there is a backtick in the string and the string is double quoted, we need to just return the string
+
+    if ($string.Contains("``") -and $string_type -eq "DoubleQuoted") {
+        return '"' + $string + '"'
+    }
+
     $out_content = ""
 
     if ($splitting -eq $false) {

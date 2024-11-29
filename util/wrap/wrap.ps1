@@ -7,7 +7,7 @@ function WrapObfuscate($code) {
     if ($obfuscated_string.Length -gt 1000) {
         $base64 = $obfuscated_string
     } else {
-        $base64 = ObfuscateString $obfuscated_string
+        $base64 = ObfuscateString $obfuscated_string "SingleQuote"
     }
 
     $iex_obf = DotObfuscateBareWord "Invoke-Expression"

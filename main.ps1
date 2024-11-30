@@ -230,7 +230,7 @@ function ObfuscateCode($code) {
                 OriginalName = $stringText
                 Text = $string.Extent.Text
                 Type = "EmptyString"
-                NewName = '[string]::Empty'
+                NewName = '([string]::Empty)'
             }
             continue
         }

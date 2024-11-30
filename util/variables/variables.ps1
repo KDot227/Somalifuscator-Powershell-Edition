@@ -1,4 +1,4 @@
-$bad_vars2 = @('$_', '$ignore', '$PSScriptRoot', '$global', '$MyInvocation', '$local', '`$', '$args', '$ErrorActionPreference', '$ProgressPreference', '$PROFILE', '$PID')
+$bad_vars2 = @('$$', '$?', '$^', '$_', '$args', '$ConsoleFileName', '$EnabledExperimentalFeatures', '$Error', '$Event', '$EventArgs', '$EventSubscriber', '$ExecutionContext', '$foreach', '$HOME', '$Host', '$input', '$IsCoreCLR', '$IsLinux', '$IsMacOS', '$IsWindows', '$LASTEXITCODE', '$Matches', '$MyInvocation', '$NestedPromptLevel', '$PID', '$PROFILE', '$PSBoundParameters', '$PSCmdlet', '$PSCommandPath', '$PSCulture', '$PSDebugContext', '$PSEdition', '$PSHOME', '$PSItem', '$PSScriptRoot', '$PSSenderInfo', '$PSUICulture', '$PSVersionTable', '$PWD', '$Sender', '$ShellId', '$StackTrace', '$switch', '$this')
 $good_chars = "bcdghijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 function ObfuscateVariables($variable_good, $parameter) {

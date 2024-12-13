@@ -1,10 +1,17 @@
 $bad_vars2 = @('$$', '$?', '$^', '$_', '$args', '$ConsoleFileName', '$EnabledExperimentalFeatures', '$Error', '$Event', '$EventArgs', '$EventSubscriber', '$ExecutionContext', '$foreach', '$HOME', '$Host', '$input', '$IsCoreCLR', '$IsLinux', '$IsMacOS', '$IsWindows', '$LASTEXITCODE', '$Matches', '$MyInvocation', '$NestedPromptLevel', '$PID', '$PROFILE', '$PSBoundParameters', '$PSCmdlet', '$PSCommandPath', '$PSCulture', '$PSDebugContext', '$PSEdition', '$PSHOME', '$PSItem', '$PSScriptRoot', '$PSSenderInfo', '$PSUICulture', '$PSVersionTable', '$PWD', '$Sender', '$ShellId', '$StackTrace', '$switch', '$this')
+$bad_start = @('$env:', '$script:')
 $good_chars = "bcdghijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 function ObfuscateVariables($variable_good, $parameter) {
     $lower_var = $variable_good.ToLower()
     if ($lower_var.StartsWith('$kdot_')) {
         return $variable_good
+    }
+
+    foreach ($bad_var in $bad_start) {
+        if ($lower_var.StartsWith($bad_var)) {
+            return $variable_good
+        }
     }
 
     switch ($lower_var) {
